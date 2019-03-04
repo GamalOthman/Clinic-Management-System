@@ -1,7 +1,6 @@
 // This program is a reservation data base
 // for a clinic
 
-#define _GNU_SOURCE			// for function getline()
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>			// for strcmp()
@@ -10,11 +9,20 @@
 #include "colors.h"
 
 // colorize input and output text:
-#define ERR_CLR		BRI_RED		// for errors
-#define OUT_CLR		RESET		// for output
-#define IN_CLR		BRI_GREEN	// for input
-#define HED_CLR		BRI_BLUE	// for headers
-#define CRD_CLR		BRI_YELLOW 	// for output cards
+// if your OS is linux, you can set condition to 1.
+#if 0
+	#define ERR_CLR		BRI_RED		// for errors
+	#define OUT_CLR		RESET		// for output
+	#define IN_CLR		BRI_GREEN	// for input
+	#define HED_CLR		BRI_BLUE	// for headers
+	#define CRD_CLR		BRI_YELLOW 	// for output cards
+#else
+	#define ERR_CLR		""		
+	#define OUT_CLR		""		
+	#define IN_CLR		""		
+	#define HED_CLR		""		
+	#define CRD_CLR		""	 	
+#endif
 
 #define WORD_LEN 50			// input word length in chars
 #define SLOTS_NUM 5			// number of slots
@@ -42,25 +50,51 @@ u8 mode = USER;		// default mode
 enum wordModes { ALPHA, NUM };
 char word[WORD_LEN];	// public share word
 
+
+// gets a line from stdin
+char *
+getLine( int len )
+{
+	char * line = malloc( len * sizeof(char) );
+	if( line == NULL ) { MEM_ERR; }
+
+	char * p = line;
+	char c;
+	while( (c = getchar()) != EOF && c != '\n' && len-- > 2 )
+	{
+		if( c == '\0' ) 
+			{ return NULL; }
+		else
+			{ *p++ = c; }
+	}
+	*p++ = '\n';
+	*p = '\0';
+
+	// flush the line:
+	if( c != '\n' )
+		{ while( getchar() != '\n' ); }
+
+	return line;
+}
+
 // gets a word from stdin, stores it in 
 // the global array (word[])
 char *
 getWord( u8 wordMode, u8 len )
 {
 	len += 2;		// for newline and '\0'
-	char * str = malloc( WORD_LEN * sizeof(char) );
-	if( str == NULL ) { MEM_ERR; };
 
 	// receive a word:
 	u8 trials = 3;
 	while( trials-- > 0 )
 	{		
 		// switch to bright green
-		fputs( IN_CLR, stdout );	
-		if( getline( &str, (size_t *) &len, stdin ) == -1 )
-			{ puts(ERR_CLR "error: getline() returned -1!"); exit(EXIT_FAILURE);}
+		fputs( IN_CLR, stdout );
+		char * str = getLine( len );
+		if( str == NULL )
+			{ puts(ERR_CLR "error: getline() returned NULL!"); exit(EXIT_FAILURE);}
 		else
-			{ memcpy( word, str, WORD_LEN ); free(str);}
+			{ strncpy( word, str, WORD_LEN ); free(str);}
 		
 		*( word + strlen(word)-1 ) = '\0';	// delete '\n' character
 		
@@ -122,7 +156,8 @@ getOrder( void )
 {
 	puts(HED_CLR "\n** Main Menu **");
 	fputs(OUT_CLR, stdout);
-	puts("Patient orders: mode, add, edit, view");
+	puts("Select user mode: mode");
+	puts("Patient orders: add, edit, view");
 	puts("Reservation orders: reserve, cancel");
 	puts("* write \"exit\" anytime to quit *");
 
@@ -197,6 +232,7 @@ isAutorized( u8 order )
 		&& order != RESERVE && order != CANCEL )
 		{ return true; }
 	
+	puts( ERR_CLR "Only admin can access!" );
 	return false;
 }
 
@@ -237,11 +273,7 @@ allocatePatient()
 {
 	// if head not filled yet:
 	if( !headExists ) 
-	{
-		// allocate name for head:
-		head->name = malloc( WORD_LEN * sizeof(char) );
-		if( head->name == NULL ) { MEM_ERR; }
-		
+	{	
 		headExists = true;
 		return head;
 	}
@@ -250,8 +282,6 @@ allocatePatient()
 		// allocate struct and name:
 		Patient_ptr pp = malloc( sizeof(Patient) );
 		if( pp == NULL ) { MEM_ERR; }
-		pp->name = malloc( WORD_LEN * sizeof(char) );
-		if( pp->name == NULL ) { MEM_ERR; }
 		
 		// link the new struct with the last one:
 		Patient_ptr lastpp = head;
@@ -272,7 +302,9 @@ fill( Patient_ptr pp )
 	// name:
 	fputs( OUT_CLR "Enter the name: ", stdout );
 	getWord( ALPHA, WORD_LEN );
-	memcpy( pp->name, word, strlen(word) );
+	pp->name = malloc( WORD_LEN * sizeof(char) );
+	if( pp->name == NULL ) { MEM_ERR; }
+	strncpy( pp->name, word, WORD_LEN );
 	
 	// age:
 	fputs( OUT_CLR "Enter the age: ", stdout );
@@ -338,6 +370,17 @@ editPatient()
 		fill(pp);
 }
 
+// prints a char multiple times.
+// used by printPatient(), printSlot() and welcomeMessage().
+void
+printMulti( char c, u32 num, char tail )
+{
+	while( num-- > 0 )
+		{ printf("%c", c); }
+
+	printf("%c", tail);
+}
+
 // prints the information of a Patient.
 // used by viewPatient().
 void
@@ -345,12 +388,9 @@ printPatient( Patient_ptr pp )
 {
 	u8 wid = 30;	// width
 	u8 ptd;			// printed chars
-	ptd = wid-1;
 
 	fputs( CRD_CLR, stdout );
-	while( ptd-- > 0 )
-		{ printf("%c", '-'); }
-	puts("");
+	printMulti( '-', wid-1, '\n' );
 
 	ptd = printf( "ID: %d", pp->id );
 	printf( "%*c\n", wid-ptd-1, '|');
@@ -365,10 +405,7 @@ printPatient( Patient_ptr pp )
 		, (pp->gender == MALE)? "male" : "female" );
 	printf( "%*c\n", wid-ptd-1, '|');
 
-	ptd = wid-1;
-	while( ptd-- > 0 )
-		{ printf("%c", '-'); }
-	puts("");
+	printMulti( '-', wid-1, '\n' );
 }
 
 // views the information of all Patients
@@ -389,7 +426,7 @@ viewPatient()
 	// view all:
 	if( !idx )
 	{
-		puts(OUT_CLR "\nPrinting all records...");
+		puts(OUT_CLR "\nShowing all records...");
 		for( pp = head; pp != NULL; pp = pp->next )
 			printPatient(pp);
 	}
@@ -433,7 +470,7 @@ hourToDec( u32 hour, u32 min )
 void
 decToHour( u32 decVal, u8 * hour, u8 * min )
 {
-	*hour = decVal;
+	*hour = decVal / 60;
 	decVal %= 60;			// 60 mins in hour
 
 	*min = decVal;
@@ -455,6 +492,7 @@ initializeSlots()
 		slotArr[i].fromHour = from;
 		slotArr[i].toHour = to;
 
+		// move to next period:
 		from = to;
 		to = from + period;
 	}
@@ -465,27 +503,28 @@ initializeSlots()
 void
 printSlot( u8 i, u8 printMode )
 {
+	// return if you're printing empty slots while slot is reserved,
+	// or you're printing full slots while slot is empty.
 	if( printMode == EMPTY && slotArr[i].reserved )
 		{ return; }
 	else if( printMode == FULL && !slotArr[i].reserved )
 		{ return; }
 
-	u8 fromH, fromM;
+	u8 fromH, fromM, toH, toM;
 	decToHour( slotArr[i].fromHour, &fromH, &fromM );
-	u8 toH, toM;
 	decToHour( slotArr[i].toHour, &toH, &toM );
 
-	u8 wid;		// width
-	u8 ptd;		// printed chars
+	u8 wid = 20;		// width
+	u8 ptd;				// printed chars
 
 	fputs( CRD_CLR, stdout );
-	wid = printf("----------------------\n");
+	printMulti( '-', wid-1, '\n' );
 	ptd = printf( "Slot number: %d", i );
 	printf( "%*c\n", wid - ptd - 1, '|');
 	ptd = printf( "%d:%.2d - %d:%.2d"
 		, fromH, fromM, toH, toM );
 	printf( "%*c\n", wid - ptd - 1, '|');	
-	printf("----------------------\n");
+	printMulti( '-', wid-1, '\n' );
 }
 
 // reserves an empty slot for a Patient.
@@ -498,7 +537,7 @@ reserveSlot()
 		{ puts(HED_CLR "\n** Reserve a Slot **"); }
 
 	// printing available slots:
-	puts(OUT_CLR "\nPrinting all available slots...");
+	puts(OUT_CLR "\nShowing all available slots...");
 	u8 i;
 	for( i = 1; i <= SLOTS_NUM; i++ )
 		printSlot( i, EMPTY );
@@ -550,7 +589,7 @@ cancelReservation()
 	else
 		puts(HED_CLR "\n** Cancel a Reservation **");
 
-	puts(OUT_CLR "\nPrinting reserved slots...");
+	puts(OUT_CLR "\nShowing reserved slots...");
 	u8 i;
 	for( i = 1; i <= SLOTS_NUM; i++ )
 		printSlot( i, FULL );
@@ -578,17 +617,6 @@ cancelReservation()
 	printf(OUT_CLR "Reservation for slot %d has been canceled!\n", num);
 }
 
-// prints a char multiple times.
-// used by welcomeMessage().
-void
-printMulti( char c, u32 num, char tail )
-{
-	while( num-- > 0 )
-		{ printf("%c", c); }
-
-	printf("%c", tail);
-}
-
 // displays a welcome message.
 void
 welcomeMessage()
@@ -614,7 +642,7 @@ int main( void )
 
 		// check if user has access to that order:
 		if( !isAutorized(order) )
-		{ puts( ERR_CLR "You have no right to access!" ); continue; }
+			continue;
 
 		switch( order )
 		{
